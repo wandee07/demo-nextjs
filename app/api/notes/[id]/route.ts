@@ -57,6 +57,7 @@ export async function PUT(request: Request, { params }: Params) {
     const updatePayload = {
       title: body?.title,
       date: body?.date,
+      endDate: body?.endDate,
       location: body?.location,
       startTime: body?.startTime,
       endTime: body?.endTime,
@@ -97,6 +98,41 @@ export async function PUT(request: Request, { params }: Params) {
   } catch (error) {
     return NextResponse.json(
       { message: "Failed to update note." },
+      { status: 500 },
+    );
+  }
+}
+
+export async function DELETE(request: Request, { params }: Params) {
+  try {
+    const body = await request.json().catch(() => ({}));
+    const bodyId = body?._id as string | undefined;
+    const targetId = params?.id;
+    const validParamId =
+      targetId && mongoose.Types.ObjectId.isValid(targetId) ? targetId : null;
+    const validBodyId =
+      bodyId && mongoose.Types.ObjectId.isValid(bodyId) ? bodyId : null;
+
+    const resolvedId = validParamId ?? validBodyId;
+
+    if (!resolvedId) {
+      return NextResponse.json(
+        { message: "Invalid note id." },
+        { status: 400 },
+      );
+    }
+
+    await connectToDatabase();
+    const deleted = await WorkLog.findByIdAndDelete(resolvedId).lean();
+
+    if (!deleted) {
+      return NextResponse.json({ message: "Note not found." }, { status: 404 });
+    }
+
+    return NextResponse.json({ message: "Deleted." }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      { message: "Failed to delete note." },
       { status: 500 },
     );
   }

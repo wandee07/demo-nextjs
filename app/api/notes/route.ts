@@ -56,6 +56,7 @@ export async function POST(request: Request) {
     const {
       title,
       date,
+      endDate,
       location,
       startTime,
       endTime,
@@ -79,6 +80,7 @@ export async function POST(request: Request) {
     const saved = await WorkLog.create({
       title,
       date,
+      endDate,
       location,
       startTime,
       endTime,

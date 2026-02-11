@@ -6,17 +6,21 @@ type WorkLog = {
   _id: string;
   title: string;
   date: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
   color?: string;
+  activities?: string;
 };
 
 type NewNoteState = {
   title: string;
   date: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   color: string;
+  activities: string;
 };
 
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -73,6 +77,35 @@ function normalizeHexColor(color: string) {
   return defaultColor;
 }
 
+function parseDateKey(dateKey: string) {
+  const [year, month, day] = dateKey.split("-").map((part) => Number(part));
+  if (!year || !month || !day) {
+    return null;
+  }
+  return new Date(year, month - 1, day);
+}
+
+function getDateRange(startKey: string, endKey?: string) {
+  const startDate = parseDateKey(startKey);
+  if (!startDate) {
+    return [];
+  }
+  const resolvedEndKey = endKey && endKey.trim() ? endKey : startKey;
+  const endDate = parseDateKey(resolvedEndKey) ?? startDate;
+  const from = startDate <= endDate ? startDate : endDate;
+  const to = startDate <= endDate ? endDate : startDate;
+  const result: string[] = [];
+
+  const cursor = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  let guard = 0;
+  while (cursor <= to && guard < 366) {
+    result.push(toDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+    guard += 1;
+  }
+  return result;
+}
+
 function getMonthLabel(date: Date) {
   return new Intl.DateTimeFormat("en-US", {
     month: "long",
@@ -107,14 +140,17 @@ export default function CalendarPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newNote, setNewNote] = useState<NewNoteState>({
     title: "",
     date: "",
+    endDate: "",
     startTime: "",
     endTime: "",
     color: defaultColor,
+    activities: "",
   });
   const today = new Date();
 
@@ -186,7 +222,10 @@ export default function CalendarPage() {
       if (!note.date) {
         return acc;
       }
-      acc[note.date] = acc[note.date] ? [...acc[note.date], note] : [note];
+      const dateKeys = getDateRange(note.date, note.endDate);
+      dateKeys.forEach((key) => {
+        acc[key] = acc[key] ? [...acc[key], note] : [note];
+      });
       return acc;
     }, {});
   }, [notes]);
@@ -202,16 +241,20 @@ export default function CalendarPage() {
     setNewNote({
       title: note.title,
       date: note.date,
+      endDate: note.endDate ?? "",
       startTime: note.startTime ?? "",
       endTime: note.endTime ?? "",
       color: normalizeColor(note.color),
+      activities: note.activities ?? "",
     });
     setEditingId(String(note._id));
     setIsFormOpen(true);
   };
 
   const handleNoteChange = (
-    event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
+    event: React.ChangeEvent<
+      HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
+    >,
   ) => {
     const { name, value } = event.target;
     setNewNote((prev) => ({ ...prev, [name]: value }));
@@ -271,9 +314,11 @@ export default function CalendarPage() {
       setNewNote({
         title: "",
         date: newNote.date,
+        endDate: "",
         startTime: "",
         endTime: "",
         color: defaultColor,
+        activities: "",
       });
       setEditingId(null);
       await reloadNotes();
@@ -286,6 +331,42 @@ export default function CalendarPage() {
       );
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleDeleteNote = async () => {
+    if (!editingId) {
+      return;
+    }
+    const confirmed = window.confirm("ต้องการลบโน้ตนี้ใช่ไหม?");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(true);
+    setErrorMessage("");
+
+    try {
+      const response = await fetch(`/api/notes/${editingId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ _id: editingId }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.message || "ลบไม่สำเร็จ");
+      }
+
+      setNotes((prev) => prev.filter((note) => note._id !== editingId));
+      setEditingId(null);
+      setIsFormOpen(false);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "ลบไม่สำเร็จ กรุณาลองใหม่",
+      );
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -449,6 +530,18 @@ export default function CalendarPage() {
                     className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 ring-blue-300"
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    วันที่สิ้นสุด
+                  </label>
+                  <input
+                    type="date"
+                    name="endDate"
+                    value={newNote.endDate}
+                    onChange={handleNoteChange}
+                    className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 ring-blue-300"
+                  />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-sm font-medium text-gray-700">
@@ -477,6 +570,19 @@ export default function CalendarPage() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700">
+                    รายละเอียด
+                  </label>
+                  <textarea
+                    rows={3}
+                    name="activities"
+                    value={newNote.activities}
+                    onChange={handleNoteChange}
+                    className="mt-2 w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 outline-none focus:ring-2 ring-blue-300"
+                    placeholder="สรุปรายละเอียดงาน/โน้ต"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
                     สีโน้ต
                   </label>
                   <div className="mt-2 flex items-center gap-3">
@@ -497,17 +603,29 @@ export default function CalendarPage() {
                     />
                   </div>
                 </div>
-                <button
-                  type="submit"
-                  disabled={isSaving}
-                  className="w-full rounded-lg bg-blue-600 text-white py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
-                >
-                  {isSaving
-                    ? "Saving..."
-                    : editingId
-                      ? "Update Note"
-                      : "Save Note"}
-                </button>
+                <div className="flex items-center gap-3">
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={handleDeleteNote}
+                      disabled={isDeleting}
+                      className="w-full rounded-lg border border-red-200 text-red-600 py-2 text-sm font-semibold hover:bg-red-50 disabled:opacity-60"
+                    >
+                      {isDeleting ? "Deleting..." : "Delete"}
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    className="w-full rounded-lg bg-blue-600 text-white py-2 text-sm font-semibold hover:bg-blue-700 disabled:opacity-60"
+                  >
+                    {isSaving
+                      ? "Saving..."
+                      : editingId
+                        ? "Update Note"
+                        : "Save Note"}
+                  </button>
+                </div>
               </form>
             )}
           </aside>

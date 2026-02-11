@@ -6,6 +6,7 @@ type WorkLog = {
   _id: string;
   title: string;
   date: string;
+  endDate?: string;
   startTime?: string;
   endTime?: string;
   location?: string;
@@ -17,6 +18,7 @@ type WorkLog = {
 type EditState = {
   title: string;
   date: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   location: string;
@@ -85,6 +87,7 @@ export default function NotesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editState, setEditState] = useState<EditState | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
 
   const loadNotes = async () => {
       setIsLoading(true);
@@ -117,6 +120,7 @@ export default function NotesPage() {
     setEditState({
       title: note.title,
       date: note.date,
+      endDate: note.endDate ?? "",
       startTime: note.startTime ?? "",
       endTime: note.endTime ?? "",
       location: note.location ?? "",
@@ -173,6 +177,39 @@ export default function NotesPage() {
     }
   };
 
+  const handleDelete = async (noteId: string) => {
+    const confirmed = window.confirm("ต้องการลบโน้ตนี้ใช่ไหม?");
+    if (!confirmed) {
+      return;
+    }
+
+    setIsDeleting(noteId);
+    setErrorMessage("");
+    try {
+      const response = await fetch(`/api/notes/${noteId}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ _id: noteId }),
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.message || "ลบไม่สำเร็จ");
+      }
+
+      setNotes((prev) => prev.filter((note) => note._id !== noteId));
+      if (editingId === noteId) {
+        closeEdit();
+      }
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "ลบไม่สำเร็จ กรุณาลองใหม่",
+      );
+    } finally {
+      setIsDeleting(null);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <header className="bg-white border-b">
@@ -209,6 +246,9 @@ export default function NotesPage() {
                     </h3>
                     <p className="text-sm text-gray-500">
                       {note.date}
+                      {note.endDate && note.endDate !== note.date
+                        ? ` - ${note.endDate}`
+                        : ""}
                       {note.startTime ? ` • ${note.startTime}` : ""}
                       {note.endTime ? ` - ${note.endTime}` : ""}
                     </p>
@@ -226,6 +266,14 @@ export default function NotesPage() {
                       onClick={() => openEdit(note)}
                     >
                       แก้ไข
+                    </button>
+                    <button
+                      type="button"
+                      className="text-xs text-red-600 hover:text-red-700"
+                      onClick={() => handleDelete(note._id)}
+                      disabled={isDeleting === note._id}
+                    >
+                      {isDeleting === note._id ? "กำลังลบ..." : "ลบ"}
                     </button>
                   </div>
                 </div>
@@ -276,6 +324,18 @@ export default function NotesPage() {
                           type="date"
                           name="date"
                           value={editState.date}
+                          onChange={handleEditChange}
+                          className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600">
+                          วันที่สิ้นสุด
+                        </label>
+                        <input
+                          type="date"
+                          name="endDate"
+                          value={editState.endDate}
                           onChange={handleEditChange}
                           className="mt-1 w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm"
                         />

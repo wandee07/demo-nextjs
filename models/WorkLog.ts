@@ -4,6 +4,7 @@ const WorkLogSchema = new Schema(
   {
     title: { type: String, required: true, trim: true },
     date: { type: String, required: true },
+    endDate: { type: String, trim: true },
     location: { type: String, trim: true },
     startTime: { type: String, trim: true },
     endTime: { type: String, trim: true },
